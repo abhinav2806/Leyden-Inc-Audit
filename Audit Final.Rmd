@@ -1,0 +1,573 @@
+---
+title: "Audit Final"
+author: "Abhinav Ram Bhatta"
+date: "2023-04-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#Loading data from all files and storing in variables for easy access
+
+library(readr)
+folder_path <- "/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files"
+
+csv_files <- list.files(folder_path, pattern = "\\.csv$")
+
+for (file in csv_files) {
+    
+  # Removing the file extension and creating a variable name
+  var_name <- tools::file_path_sans_ext(file)
+  
+  # Reading the CSV file and assigning it to a variable with the generated name
+  assign(var_name, read_csv(file.path(folder_path, file)), envir = .GlobalEnv)
+}
+
+```
+
+
+```{r}
+library(plotluck)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(gridExtra)
+library(lubridate)
+```
+
+
+
+# Question 1: Preliminary Tests of Transactions Controls
+
+```{r}
+
+
+# Creating a data frame with the inv_extended column
+YE_Inventory_df <- perpetual_inventory_ledger %>% group_by(sku) %>% inner_join(sales_journal, by = "sku") %>% slice(n()) %>% mutate(inv_extended = unit_cost * stock_on_hand) %>% ungroup() %>% select(inv_extended)
+
+# Calculating the sum of inv_extended
+YE_Inventory <- sum(YE_Inventory_df$inv_extended)
+
+Sales <- sum(sales_journal$collection_amount)
+Sales_Returns <- sum(sales_journal$sales_return * sales_journal$sales_unit_price * sales_journal$sales_count)
+AR <- sum(fyear_end_ar_ledger$amount)
+
+Begin_Inventory <- fyear_begin_inventory_ledger %>% group_by(sku) %>% mutate(inv_extended = unit_cost * stock_on_hand) %>% ungroup() %>% select(inv_extended) %>% sum()
+Cash <- sales_journal %>% filter(cash_not_ar == 1) %>% select(collection_amount) %>% sum()
+
+# Sales
+p1 <- plotluck(sales_journal, collection_amount~1) +  ggtitle("Plot of Sales") + xlab("Sales amount") + ylab("Density")
+
+# Cash
+p2 <- plotluck(deposit_daily,deposit_amount~1) +  ggtitle("Plot of Cash") +xlab("Cash Amount") + ylab("Density")
+
+# AR
+p3 <- plotluck(fyear_end_ar_ledger,amount~1) + ggtitle("Plot of Accounts Receivable") + xlab("Amount") + ylab("Density")
+
+# Inventory
+p4 <- plotluck(YE_Inventory_df, inv_extended~1) + ggtitle("Plot of Inventory")
+
+grid.arrange(
+  arrangeGrob(p1, p2, ncol = 2),
+  arrangeGrob(p3, p4, ncol = 2),
+  nrow = 2
+)
+
+# Returns
+p5 <- plot(density(sales_journal$sales_return * sales_journal$sales_unit_price), main = "Returns")
+
+# COGS
+p6 <- plot(density(sales_journal$sales_count * sales_journal$unit_cost), main = "COGS")
+
+```
+
+
+# Question 2: Sales Duplicates and Ommissions Error Rates
+
+```{r}
+
+#Invoice numbers
+dup_invoice <-  sales_journal[duplicated(sales_journal$invoice_no), ] 
+n <- nrow(dup_invoice)
+dup_invoice_per <- (n / nrow(sales_journal))*100
+cat("\n % of duplicate Invoice number = ", dup_invoice_per)
+
+#Shipping numbers
+dup_shipping <-  shipments_journal[duplicated(shipments_journal$shipper_no), ] 
+n <- nrow(dup_shipping)
+dup_shipping_per <- (n / nrow(shipments_journal))*100
+cat("\n % of duplicate Shipping numbers = ", dup_shipping_per)
+
+
+#Collection Receipt numbers
+dup_collection <-  collections_journal[duplicated(collections_journal$collection_no), ] 
+n <- nrow(dup_collection)
+dup_collection_per <- (n / nrow(collections_journal))*100
+cat("\n % of duplicate Collection receipt numbers = ", dup_collection_per)
+
+
+#Customers with credit balances
+dup_credit <-  fyear_end_ar_ledger[duplicated(fyear_end_ar_ledger$invoice_no), ] 
+n <- nrow(dup_credit )
+dup_credit_per <- (n / nrow(fyear_end_ar_ledger))*100
+cat("\n % of duplicate Customers with credit balances = ", dup_credit_per )
+```
+
+
+
+
+```{r}
+#Invoice numbers
+invoice <- as.numeric(substring(sales_journal$invoice_no, 2)) 
+invoice_min <- as.numeric(min(invoice))
+invoice_max <- as.numeric(max(invoice))
+
+omit <- as.data.frame(setdiff(invoice_min:invoice_max, invoice)) 
+n <- nrow(omit)
+omi_invoice_per <- (n / nrow(sales_journal))*100
+cat("\n % of omitted Invoice numbers = ", omi_invoice_per)
+
+#Shipping numbers
+shipping <- as.numeric(substring(shipments_journal$shipper_no, 2)) 
+shipping_min <- as.numeric(min(shipping))
+shipping_max <- as.numeric(max(shipping))
+
+omit <- as.data.frame(setdiff(shipping_min:shipping_max, shipping)) 
+n <- nrow(omit)
+omi_shipping_per <- (n / nrow(shipments_journal))*100
+cat("\n % of omitted Shipping numbers = ", omi_shipping_per)
+
+
+#Collection Receipt numbers
+collection <- as.numeric(substring(collections_journal$collection_no, 2)) 
+collection_min <- as.numeric(min(collection))
+collection_max <- as.numeric(max(collection))
+
+omit <- as.data.frame(setdiff(collection_min:collection_max, collection)) 
+n <- nrow(omit)
+
+omi_collection_per <- (n / nrow(collections_journal))*100
+cat("\n % of omitted Collection receipt numbers = ", omi_collection_per)
+
+
+#Customers with credit balances 
+credit <- as.numeric(substring(fyear_end_ar_ledger$invoice_no, 2)) 
+credit_min <- as.numeric(min(credit))
+credit_max <- as.numeric(max(credit))
+
+omit <- as.data.frame(setdiff(credit_min:credit_max, credit)) 
+n <- nrow(omit)
+
+omi_credit_per <- (n / nrow(fyear_end_ar_ledger))*100
+cat("\n % of omitted Customers with credit balances  numbers = ", omi_credit_per)
+```
+
+
+
+
+# Question 3: Error Rates in Sales Amounts
+
+```{r}
+
+MTE<-(100000/sum(sales_journal$sales_count*sales_journal$sales_unit_price))
+MTE #1.20% is the intolerable error
+confidence <- .95
+n <- (log(1-confidence))/log(1-MTE)
+n<-round(n)
+sample_size<-n
+
+
+rw_credit_sales <- read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/real_world_credit_sales.csv",na.strings="0",stringsAsFactors=FALSE) %>% select(invoice_no,sales_unit_price,sales_count)
+
+rw_cash_sales <- read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/real_world_cash_sales.csv",na.strings="0",stringsAsFactors=FALSE) %>% select(invoice_no,sales_unit_price,sales_count)
+
+#Joining real world Credit Sales and Cash Sales
+rw_join_sales <- rbind(rw_credit_sales,rw_cash_sales) 
+
+
+#Discovery sample for Sales Journal
+discovery_sample_sales <- sales_journal[sample(nrow(sales_journal), sample_size),] %>%
+select(invoice_no,sales_unit_price,sales_count)
+
+#Discovery sample for Real world Credit & Sash files combined
+discovery_sample_rw_sales <- rw_join_sales[sample(nrow(rw_join_sales), sample_size),] %>%
+select(invoice_no,sales_unit_price,sales_count)
+
+#Inner joining real world credit sales and real world cash sales
+audited_sample <-left_join(discovery_sample_sales,discovery_sample_rw_sales,by="invoice_no") %>%
+select(invoice_no,sales_unit_price.x,sales_count.x,sales_unit_price.y,sales_count.y)
+
+exceptions <-audited_sample %>%filter(sales_unit_price.x != sales_unit_price.y |
+sales_count.x != sales_count.y
+)
+error_rate_sales <- nrow(exceptions) / nrow(audited_sample)
+cat("\n Discovery: error rate in sales:", error_rate_sales)
+
+error_sales_amt <-
+100 * sum(exceptions$sales_count.y * exceptions$sales_unit_price.y) /
+sum(audited_sample$sales_unit_price.x * audited_sample$sales_count.x)
+cat("\n Discovery: amount for sales sample is overstated (i.e. is in error):",
+prettyNum(error_sales_amt, big.mark=","),
+" %")
+```
+
+
+
+# Question 4: Compute dollar and percentage totals for:
+
+```{r}
+#Converting to date
+sales_journal$invoice_date <- as.Date(sales_journal$invoice_date)
+sales_journal$collection_date <- as.Date(sales_journal$collection_date)
+
+#Calculating days_outstanding
+sales_journal$days_outstanding <- as.numeric(sales_journal$collection_date - sales_journal$invoice_date)
+
+#Calculating dollar totals 
+ARUnder30  <- sum(sales_journal$collection_amount[which(sales_journal$days_outstanding <  30)])
+ARBet30n60 <- sum(sales_journal$collection_amount[which(sales_journal$days_outstanding >= 30 & sales_journal$days_outstanding <= 60)])
+ARAbove60  <- sum(sales_journal$collection_amount[which(sales_journal$days_outstanding >  60)])
+
+#calculating percentage totals
+ARUnder30per  <- (ARUnder30  / sum(sales_journal$collection_amount)) *100
+ARBet30n60per <- (ARBet30n60 / sum(sales_journal$collection_amount)) *100
+ARAbove60per  <- (ARAbove60  / sum(sales_journal$collection_amount)) *100
+
+#List of invoices over 60 
+ARAbove60in <- sales_journal$invoice_no[which(sales_journal$days_outstanding >  60)]
+as.data.frame(ARAbove60in)
+
+ARAbove60in <- subset(sales_journal, days_outstanding >  60)
+
+
+#Printing dollar and percentage totals
+cat("a) All Invoices under 30 days old:\n")
+cat("Dollar Total: ", ARUnder30, "\n")
+cat("Percentage Total: ", ARUnder30per, "%\n\n")
+
+cat("b) All Invoices between 30 to 60 days old:\n")
+cat("Dollar Total: ", ARBet30n60, "\n")
+cat("Percentage Total: ", ARBet30n60per, "%\n\n")
+
+cat("c) All Invoices over 60 days old:\n")
+cat("Dollar Total: ", ARAbove60, "\n")
+cat("Percentage Total: ", ARAbove60per, "%\n\n")
+
+
+# Filtering rows with missing or non-alphanumeric customer_no values
+ARAbove60in <- ARAbove60in[!is.na(ARAbove60in$customer_no), ]
+
+#Count of frequency of each customer_no
+customer_count <- table(ARAbove60in$customer_no)
+
+#Creating a bar plot
+barplot(customer_count, main="Customer Numbers for Invoices over 60 Days",
+        xlab="Customer Number", ylab="Frequency", las=2, cex.names=0.8)
+
+plot(ARAbove60in$days_outstanding)
+
+plot(seq_along(ARAbove60in$invoice_no), ARAbove60in$days_outstanding,
+      main="Invoice over 60 days", 
+      xlab="Number of Invoices", ylab="Number of Days")
+
+hist(as.numeric(ARAbove60in$days_outstanding), main="Invoice over 60 days", 
+      xlab="Number of Invoices", ylab="Number of Days"
+)
+```
+
+
+
+
+# Question 5: Identify all customer balances greater than their credit limit.  
+
+```{r}
+#Calculating credit limits
+cr_limit <- sales_journal %>%
+  group_by(customer_no) %>%
+  summarize(ann_sales = sum(sales_extended),
+            time_to_pay = mean(as.numeric(collection_date - invoice_date), na.rm = TRUE),
+            credit_limit = 10 * round(ann_sales / time_to_pay, digits = -2))
+
+#Calculating customer AR balance
+customer_age_ar <- sales_journal %>%
+  group_by(customer_no) %>%
+  summarize(total = sum(collection_amount))
+
+#Joining AR balance with credit limits and checking for customers over the limit
+OverlimitTable <- full_join(cr_limit, customer_age_ar, by = "customer_no") %>%
+  mutate(OverLimit = ifelse((total > credit_limit), "Yes", "No"))
+
+#Identifying customers with balances greater than their credit limit
+problematic_customers <- OverlimitTable %>%
+  filter(OverLimit == "Yes")
+
+#Displaying problematic customers
+cat("Customers with balances greater than their credit limit:\n")
+print(problematic_customers)
+
+#Checking if any customers are substantially over their credit limit
+substantially_over_limit <- problematic_customers %>%
+  mutate(over_limit_percentage = (total - credit_limit) / credit_limit) %>%
+  filter(over_limit_percentage > 0.5)
+#Customers with over 50% of their credit limit as a threshold
+
+#Displaying substantially over limit customers
+if (nrow(substantially_over_limit) > 0) {
+  cat("\nCustomers substantially over their credit limit (over 50%):\n")
+  print(substantially_over_limit)
+} else {
+  cat("\nNo customers are substantially over their credit limit (over 50%).\n")
+}
+
+
+```
+
+
+
+# Question 6: Perform a sales cutoff test
+
+```{r}
+fisyear_begin_2021 <- as.Date("2021-01-01")
+fisyear_end_2021 <- as.Date("2021-12-31")
+fisyear_begin_2022 <- as.Date("2022-01-01")
+fisyear_end_2022 <- as.Date("2022-12-31")
+
+sales_journal$invoice_date <- as.Date(sales_journal$invoice_date)
+sales_journal$shipper_date <- as.Date(sales_journal$shipper_date)
+
+sales_cutoff_errors <- sales_journal %>% 
+  filter(invoice_date <= fisyear_end_2021 & shipper_date >= fisyear_begin_2022) %>% 
+  select(customer_no, invoice_no, invoice_date, shipper_no, shipper_date, sales_extended)
+
+sales_cutoff_errors
+
+cutoff_error_count <- nrow(sales_cutoff_errors)
+cutoff_error_percentage <- nrow(sales_cutoff_errors) / nrow(sales_journal) * 100
+
+cat("Sales Cutoff Errors:\n")
+print(sales_cutoff_errors)
+
+cat("\nNumber of Sales Cutoff Errors: ", cutoff_error_count, "\n")
+cat("\nPercentage of Sales Cutoff Errors in the Total Sales Journal: ", cutoff_error_percentage, "%\n")
+
+```
+
+
+# Question 7: Check if AR balances are fairly stated
+
+```{r}
+
+library(readr)
+library(pwr)
+real_world_fyear_end_ar_ledger <- read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/real_world_fyear_end_ar_ledger.csv")
+sum(real_world_fyear_end_ar_ledger$amount)
+nrow(real_world_fyear_end_ar_ledger)
+total_ar_balance <- sum(real_world_fyear_end_ar_ledger$amount)
+total_inovices <- nrow(real_world_fyear_end_ar_ledger)
+average_ar_balance <- total_ar_balance/total_inovices
+delta  <- 0.05 * average_ar_balance
+sigma  <- 0.3 * average_ar_balance
+effect <- delta/sigma
+sample <- pwr.t.test(d = effect, sig.level = 0.05, power = 0.95, type = "one.sample", alternative = "greater")
+estimated_error <- (sample$n * delta) / total_inovices
+
+cat("\n attribute sample size for occurrence of error =", ceiling(sample$n), "\n estimated error in population = " , estimated_error,
+    "\n Error is tolearable and, no need to extend the sample size",
+    "\n AR balances are Fairly Stated")
+
+
+
+
+```
+
+
+# Question 8: Inventory Ommissions and Duplicates
+
+```{r}
+
+purchase_journal<-read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/purchase_journal.csv")
+
+receiver_journal<-read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/receiver_journal.csv")
+
+cat("Total number of purchase order numbers = ",nrow(purchase_journal))
+cat("\nTotal number of receiver numbers = ",nrow(receiver_journal))
+
+# Calculate percentage of duplicate purchase order numbers
+dup_purchase <- purchase_journal[duplicated(purchase_journal$po_no), ]
+perc_dup_purchase <- round(nrow(dup_purchase) / nrow(purchase_journal) * 100, 2)
+cat("\nNumber of duplicate purchases = ", nrow(dup_purchase))
+cat("\nPercentage of duplicate purchases = ", perc_dup_purchase)
+
+# Calculate percentage of duplicate receiver numbers
+dup_receiver <- receiver_journal[duplicated(receiver_journal$receiver_no), ]
+perc_dup_receiver <- round(nrow(dup_receiver) / nrow(receiver_journal) * 100, 2)
+cat("\nNumber of duplicate receiver_no in receiver_journal = ", nrow(dup_receiver))
+cat("\nPercentage of duplicate receiver_no in receiver_journal = ", perc_dup_receiver)
+
+# Calculate percentage of omitted purchase order numbers
+po_numbers <- as.numeric(gsub("\\D", "", purchase_journal$po_no))
+omitted_po <- setdiff(min(po_numbers):max(po_numbers), po_numbers)
+perc_omitted_po <- round(length(omitted_po) / nrow(purchase_journal) * 100, 2)
+cat("\nNumber of omitted purchase records = ", length(omitted_po))
+cat("\nPercentage of omitted purchase records = ", perc_omitted_po)
+
+# Calculate percentage of omitted receiver numbers
+receiver_numbers <- as.numeric(gsub("\\D", "", receiver_journal$receiver_no))
+omitted_receiver <- setdiff(min(receiver_numbers):max(receiver_numbers), receiver_numbers)
+perc_omitted_receiver <- round(length(omitted_receiver) / nrow(receiver_journal) * 100, 2)
+cat("\nNumber of omitted receiver records = ", length(omitted_receiver))
+cat("\nPercentage of omitted receiver records = ", perc_omitted_receiver)
+
+# Print results and determine if systems are in-control or out-of-control
+tolerable_error_rate <- 1
+
+if (perc_dup_receiver <= tolerable_error_rate && perc_omitted_receiver <= tolerable_error_rate) {
+  cat("\nDuplicates in ReceiverNumbers: ", perc_dup_receiver, "% - Incontrol")
+  cat("\nOmmissions in ReceiverNumbers: ", perc_omitted_receiver, "% - Incontrol")
+} else {
+  cat("\nDuplicates in ReceiverNumbers: ", perc_dup_receiver, "% - Out of control")
+  cat("\nOmmissions in ReceiverNumbers: ", perc_omitted_receiver, "% - Out of control")
+}
+
+if (perc_dup_purchase > tolerable_error_rate || perc_omitted_po > tolerable_error_rate) {
+  cat("\nDuplicates in PurchaseOrders: ", perc_dup_purchase, "% - Out of control")
+  cat("\nOmmissions in PurchaseOrders: ", perc_omitted_po, "% - Out of control")
+} else {
+  cat("\nDuplicates in PurchaseOrders: ", perc_dup_purchase, "% - Incontrol")
+  cat("\nOmmissions in PurchaseOrders: ", perc_omitted_po, "% - Incontrol")
+}
+
+```
+
+# Question 9: Inventory Stock on Hand with a Turnover of Less than 5 times
+
+```{r}
+# Loading libraries
+library(tidyverse)
+
+perpetual_inventory_ledger <- read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/perpetual_inventory_ledger.csv")
+
+sales_journal <- read.csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/sales_journal.csv")
+
+
+# Calculating sales per SKU
+sales_of_sku_per_year <- sales_journal %>%
+  group_by(sku) %>%
+  summarise(sales_rate = sum(sales_count, na.rm = TRUE))
+
+# Getting the latest unit_cost for each SKU
+unit_costs <- sales_journal %>%
+  group_by(sku) %>%
+  arrange(desc(invoice_date)) %>% # Arrange by date in descending order
+  slice(1) %>% # Select the first row (the most recent one) for each SKU
+  select(sku, unit_cost)
+
+# Calculating the product of unit_cost and sales_rate
+multiply <- sales_of_sku_per_year %>%
+  left_join(unit_costs, by = "sku") %>%
+  mutate(multiply1 = unit_cost * sales_rate)
+
+# Calculating the stock on hand for each SKU
+perpetual_inventory_ledger1 <- perpetual_inventory_ledger %>%
+  group_by(sku) %>%
+  summarise(stock = sum(stock_on_hand, na.rm = TRUE))
+
+# Calculating the quantity of annual sales and filter for SKUs with less than 5 times turnover
+quantityannualsales <- perpetual_inventory_ledger1 %>%
+  left_join(multiply, by = "sku") %>%
+  mutate(quantity_of_annual_sales = multiply1 / stock) %>%
+  select(sku, quantity_of_annual_sales) %>%
+  filter(quantity_of_annual_sales < 5)
+
+# Displaying the result
+quantityannualsales
+```
+
+# Question 10: Inventory Stock on Hand Lower of Cost or Market
+
+```{r}
+library(tidyverse)
+real_world_ye_inventory[is.na(real_world_ye_inventory)] <- 0
+nrv <- perpetual_inventory_ledger %>%
+group_by(sku) %>%
+slice(n()) %>% ## the final slice, by SKU, will be what is in-stock at year end
+left_join(real_world_ye_inventory, by="sku") %>%
+filter(exception != "No exception, count is accurate") %>%
+mutate(err_perpetual = stock_on_hand - ye_stock_on_hand) %>%
+select(sku,
+stock_on_hand,
+ye_stock_on_hand,
+unit_cost,
+actual_unit_market,
+err_perpetual,
+count_exception,
+exception) %>%
+mutate(ye_cost = stock_on_hand * unit_cost,
+ye_market = ye_stock_on_hand * actual_unit_market,
+sales_commission = ye_market * 0.1,
+ye_market_with_commission = ye_market + sales_commission,
+nrv = ye_market_with_commission - ye_cost) %>%
+select(sku, ye_cost, ye_market, ye_market_with_commission , nrv) %>%
+as.data.frame()
+nrv
+
+```
+
+
+# Question 11: At year end the client counts the physical inventory and reconciles to Perpetual Inventory System
+
+
+```{r }
+
+perpetual_inventory_ledger<- read_csv("/Users/abhinavram/Documents/Sem 2 UIC/IDS 523 Audit/auditanalytics_final_files/perpetual_inventory_ledger.csv")
+
+
+population_size=nrow(real_world_ye_inventory)
+
+# Set the tolerable error amount
+tolerable_error <- 10000000
+
+# Calculate the minimum sample size required
+z_value <- qnorm(0.975) # for 95% confidence level
+p <- 0.5 # assuming a conservative estimate of 50% errors
+e <- tolerable_error
+min_sample_size <- ceiling((z_value^2 * p * (1 - p)) / (e^2))
+
+N<- min_sample_size
+
+sample_invoices <-  perpetual_inventory_ledger[sample(nrow(perpetual_inventory_ledger), N),]
+
+
+inventory_count_differences <-
+  perpetual_inventory_ledger %>% 
+  group_by(sku) %>% 
+  inner_join(real_world_ye_inventory, by="sku") %>% 
+  slice(n()) %>%    # the final slice, by SKU, will be what is in-stock at year end
+  filter(exception != "No exception, count is accurate") %>% 
+  mutate(err_perpetual = stock_on_hand - ye_stock_on_hand) %>% 
+  select(sku, err_perpetual, unit_cost, count_exception, exception, actual_unit_market) %>% 
+  as.data.frame()
+ 
+inventory_count_differences 
+
+ratio<- population_size/N
+
+error<- (sum(inventory_count_differences$err_perpetual))*ratio
+
+
+cat("Estimated error in the population:", error, "\n")
+cat("As error rate is less than tolerable rate we can conclude that inventory balance is materially fairly presented.")
+
+```
+
+# Estimated error in the population: 212000 
+
+# Audit Opinion for Question 12 is written in the presentation.
+
+
+
